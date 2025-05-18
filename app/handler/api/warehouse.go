@@ -2,6 +2,7 @@ package handler
 
 import (
 	"log/slog"
+	"strconv"
 	"warehouse-service/app/domain"
 	"warehouse-service/app/handler/api/response"
 
@@ -41,9 +42,15 @@ func (h *WarehouseHandler) Create(c *fiber.Ctx) error {
 }
 
 func (h *WarehouseHandler) GetByShopID(c *fiber.Ctx) error {
-	shopID := c.Params("shop_id")
-	if shopID == "" {
+	shopIDStr := c.Params("shop_id")
+	if shopIDStr == "" {
 		slog.ErrorContext(c.Context(), "[warehouseHandler] GetByShopID", "shopID", "missing")
+		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrBadRequest))
+	}
+
+	shopID, err := strconv.ParseInt(shopIDStr, 10, 64)
+	if err != nil || shopID <= 0 {
+		slog.ErrorContext(c.Context(), "[warehouseHandler] GetByShopID", "parseInt:"+shopIDStr, err)
 		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrBadRequest))
 	}
 

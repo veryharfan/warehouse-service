@@ -33,7 +33,7 @@ func (u *warehouseUsecase) Create(ctx context.Context, req *domain.WarehouseCrea
 	return warehouse, nil
 }
 
-func (u *warehouseUsecase) GetByShopID(ctx context.Context, shopID string) ([]domain.Warehouse, error) {
+func (u *warehouseUsecase) GetByShopID(ctx context.Context, shopID int64) ([]domain.Warehouse, error) {
 	warehouses, err := u.warehouseRepo.GetByShopID(ctx, shopID)
 	if err != nil {
 		slog.ErrorContext(ctx, "[warehouseUsecase] GetByShopID", "getWarehouses", err)

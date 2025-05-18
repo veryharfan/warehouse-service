@@ -34,7 +34,7 @@ func (r *warehouseRepository) Create(ctx context.Context, warehouse *domain.Ware
 	return nil
 }
 
-func (r *warehouseRepository) GetByShopID(ctx context.Context, shopID string) ([]domain.Warehouse, error) {
+func (r *warehouseRepository) GetByShopID(ctx context.Context, shopID int64) ([]domain.Warehouse, error) {
 	query := `SELECT id, shop_id, name, location, active, created_at, updated_at 
 	FROM warehouses WHERE shop_id = $1`
 	rows, err := r.conn.QueryContext(ctx, query, shopID)
