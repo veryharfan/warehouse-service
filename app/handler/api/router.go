@@ -9,13 +9,13 @@ import (
 
 func SetupRouter(app *fiber.App, warehousHandler *WarehouseHandler, stockHandler *StockHandler, cfg *config.Config) {
 
-	api := app.Group("/internal/warehouse-service")
-
-	api.Use(middleware.AuthInternal(cfg))
+	api := app.Group("/warehouse-service").Use(middleware.Auth(cfg.Jwt.SecretKey))
 
 	api.Post("/warehouses", warehousHandler.Create)
 	api.Get("/shops/:shop_id/warehouses", warehousHandler.GetByShopID)
 
-	api.Post("/stocks", stockHandler.Create)
 	api.Get("/products/:product_id/stocks", stockHandler.GetByProductID)
+
+	internal := app.Group("/internal/warehouse-service").Use(middleware.AuthInternal(cfg))
+	internal.Post("/stocks", stockHandler.Create)
 }
