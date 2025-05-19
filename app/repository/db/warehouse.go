@@ -11,17 +11,17 @@ type warehouseRepository struct {
 	conn *sql.DB
 }
 
-func NewUserRepository(db *sql.DB) domain.WarehouseRepository {
+func NewWarehouseRepository(db *sql.DB) domain.WarehouseRepository {
 	return &warehouseRepository{db}
 }
 
 func (r *warehouseRepository) Create(ctx context.Context, warehouse *domain.Warehouse) error {
-	query := `INSERT INTO warehouses (id, shop_id, name, location, active) 
-	VALUES ($1, $2, $3, $4, $5)
+	query := `INSERT INTO warehouses (shop_id, name, location, active) 
+	VALUES ($1, $2, $3, $4)
 	Returning id, created_at, updated_at
 	`
 
-	err := r.conn.QueryRowContext(ctx, query, warehouse.ID, warehouse.ShopID, warehouse.Name, warehouse.Location, warehouse.Active).
+	err := r.conn.QueryRowContext(ctx, query, warehouse.ShopID, warehouse.Name, warehouse.Location, warehouse.Active).
 		Scan(
 			&warehouse.ID,
 			&warehouse.CreatedAt,
@@ -35,7 +35,7 @@ func (r *warehouseRepository) Create(ctx context.Context, warehouse *domain.Ware
 }
 
 func (r *warehouseRepository) GetByShopID(ctx context.Context, shopID int64) ([]domain.Warehouse, error) {
-	query := `SELECT id, shop_id, name, location, active, created_at, updated_at 
+	query := `SELECT id, shop_id, name, active, created_at, updated_at 
 	FROM warehouses WHERE shop_id = $1`
 	rows, err := r.conn.QueryContext(ctx, query, shopID)
 	if err != nil {
@@ -47,8 +47,8 @@ func (r *warehouseRepository) GetByShopID(ctx context.Context, shopID int64) ([]
 	var warehouses []domain.Warehouse
 	for rows.Next() {
 		var warehouse domain.Warehouse
-		if err := rows.Scan(&warehouse.ID, &warehouse.ShopID, &warehouse.Name, &warehouse.Location,
-			&warehouse.Active, &warehouse.CreatedAt, &warehouse.UpdatedAt); err != nil {
+		if err := rows.Scan(&warehouse.ID, &warehouse.ShopID, &warehouse.Name, &warehouse.Active,
+			&warehouse.CreatedAt, &warehouse.UpdatedAt); err != nil {
 			slog.ErrorContext(ctx, "[warehouseRepository] GetByShopID", "scan", err)
 			return nil, err
 		}

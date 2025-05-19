@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
-	"log"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	handler "warehouse-service/app/handler/api"
 	"warehouse-service/app/middleware"
+	"warehouse-service/app/repository/broker"
 	"warehouse-service/app/repository/db"
 	"warehouse-service/app/usecase"
 	"warehouse-service/config"
@@ -19,6 +22,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/healthcheck"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	slogfiber "github.com/samber/slog-fiber"
 )
 
@@ -26,8 +31,9 @@ func main() {
 	// init logger
 	logger.InitLogger()
 
+	ctx := context.Background()
 	// init config
-	cfg, err := config.InitConfig(context.Background())
+	cfg, err := config.InitConfig(ctx)
 	if err != nil {
 		slog.Error("failed to init config", "error", err)
 		return
@@ -36,16 +42,43 @@ func main() {
 	// init database
 	dbConn, err := db.NewPostgres(cfg.Db)
 	if err != nil {
-		log.Fatalf("DB connection failed: %v", err)
+		slog.Error("DB connection failed", "error", err)
 	}
 	defer dbConn.Close()
 
+	// Connect to NATS server
+	nc, err := nats.Connect(cfg.Nats.Url) // default is nats://localhost:4222
+	if err != nil {
+		slog.Error("Error connecting to NATS", "error", err)
+		return
+	}
+	defer nc.Drain()
+
+	js, err := jetstream.New(nc)
+	if err != nil {
+		slog.Error("Error creating JetStream context", "error", err)
+		return
+	}
+	_, err = js.CreateStream(ctx, jetstream.StreamConfig{
+		Name:     strings.ToUpper(cfg.Nats.StreamName),
+		Subjects: []string{fmt.Sprintf("%s.*", strings.ToLower(cfg.Nats.StreamName))},
+		Storage:  jetstream.FileStorage,
+	})
+	if err != nil && !errors.Is(err, jetstream.ErrStreamNameAlreadyInUse) {
+		slog.Error("create STOCK stream failed", "error", err)
+		return
+	}
+
 	reqValidator := validator.New()
-	userRepo := db.NewUserRepository(dbConn)
+	warehouseRepo := db.NewWarehouseRepository(dbConn)
+	stockRepo := db.NewStockRepository(dbConn)
+	stockBroker := broker.NewStockBrokerPublisher(js)
 
-	userUsecase := usecase.NewWarehouseUsecase(userRepo, cfg)
+	warehouseUsecase := usecase.NewWarehouseUsecase(warehouseRepo, cfg)
+	stockUsecase := usecase.NewStockUsecase(stockRepo, warehouseRepo, stockBroker, cfg)
 
-	userHandler := handler.NewWarehouseHandler(userUsecase, reqValidator)
+	warehouseHandler := handler.NewWarehouseHandler(warehouseUsecase, reqValidator)
+	stockHandler := handler.NewStockHandler(stockUsecase, reqValidator)
 
 	// Initialize HTTP web framework
 	app := fiber.New()
@@ -69,7 +102,7 @@ func main() {
 	}))
 	app.Use(middleware.RequestIDMiddleware())
 
-	handler.SetupRouter(app, userHandler, cfg)
+	handler.SetupRouter(app, warehouseHandler, stockHandler, cfg)
 
 	go func() {
 		if err := app.Listen(":" + cfg.Port); err != nil {

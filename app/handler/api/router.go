@@ -7,12 +7,15 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func SetupRouter(app *fiber.App, handler *WarehouseHandler, cfg *config.Config) {
+func SetupRouter(app *fiber.App, warehousHandler *WarehouseHandler, stockHandler *StockHandler, cfg *config.Config) {
 
-	warehouseAPIGroup := app.Group("/warehouse-service")
+	api := app.Group("/internal/warehouse-service")
 
-	warehouseAPIGroup.Use(middleware.AuthInternal(cfg))
+	api.Use(middleware.AuthInternal(cfg))
 
-	warehouseAPIGroup.Post("/warehouse", handler.Create)
-	warehouseAPIGroup.Get("/warehouse/:shop_id", handler.GetByShopID)
+	api.Post("/warehouses", warehousHandler.Create)
+	api.Get("/shops/:shop_id/warehouses", warehousHandler.GetByShopID)
+
+	api.Post("/stocks", stockHandler.Create)
+	api.Get("/products/:product_id/stocks", stockHandler.GetByProductID)
 }

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"warehouse-service/app/domain"
 	"warehouse-service/app/handler/api/response"
+	"warehouse-service/pkg/ctxutil"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -31,7 +32,13 @@ func (h *WarehouseHandler) Create(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrValidation))
 	}
 
-	warehouse, err := h.warehouseUsecase.Create(c.Context(), &req)
+	shopID, err := ctxutil.GetShopIDCtx(c.Context())
+	if err != nil {
+		slog.ErrorContext(c.Context(), "[warehouseHandler] Create", "GetShopIDCtx", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(response.Error(domain.ErrInternal))
+	}
+
+	warehouse, err := h.warehouseUsecase.Create(c.Context(), shopID, &req)
 	if err != nil {
 		slog.ErrorContext(c.Context(), "[warehouseHandler] Create", "usecase", err)
 		status, response := response.FromError(err)

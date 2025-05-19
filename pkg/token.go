@@ -1,24 +1,55 @@
 package pkg
 
 import (
-	"time"
+	"fmt"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 )
 
-func CreateJwtToken(userId int64, secretKey string, expired int64) (string, error) {
-	// Create a new JWT token
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"uid": userId,
-		"exp": jwt.TimeFunc().Add(time.Second * time.Duration(expired)).Unix(), // Token expiration time
-		"iat": jwt.TimeFunc().Unix(),                                           // Token issued at time
-	})
+type TokenClaims struct {
+	UID int64  `json:"uid"`
+	SID *int64 `json:"sid"`
+}
 
-	// Sign the token with the secret key
-	tokenString, err := token.SignedString([]byte(secretKey))
+func ParseJwtToken(tokenString string, secretKey string) (TokenClaims, error) {
+	// Parse the token
+	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+		// Check the signing method
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(secretKey), nil
+	})
 	if err != nil {
-		return "", err
+		return TokenClaims{}, err
 	}
 
-	return tokenString, nil
+	// Validate the token and extract claims
+	var tokenClaims TokenClaims
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		if uid, ok := claims["uid"].(float64); ok {
+			tokenClaims.UID = int64(uid)
+		}
+		if shopID, ok := claims["sid"].(float64); ok {
+			tokenClaims.SID = new(int64)
+			*tokenClaims.SID = int64(shopID)
+		}
+		return tokenClaims, nil
+	}
+
+	return TokenClaims{}, fmt.Errorf("invalid token claims")
+}
+
+func GetTokenFromHeaders(header string) (string, error) {
+	if header == "" {
+		return "", fmt.Errorf("missing token")
+	}
+
+	// Split the header to get the token
+	token := header[len("Bearer "):]
+	if token == "" {
+		return "", fmt.Errorf("invalid token")
+	}
+
+	return token, nil
 }

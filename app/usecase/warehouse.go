@@ -16,9 +16,9 @@ func NewWarehouseUsecase(warehouseRepo domain.WarehouseRepository, cfg *config.C
 	return &warehouseUsecase{warehouseRepo, cfg}
 }
 
-func (u *warehouseUsecase) Create(ctx context.Context, req *domain.WarehouseCreateRequest) (*domain.Warehouse, error) {
+func (u *warehouseUsecase) Create(ctx context.Context, shopID int64, req *domain.WarehouseCreateRequest) (*domain.Warehouse, error) {
 	warehouse := &domain.Warehouse{
-		ShopID:   req.ShopID,
+		ShopID:   shopID,
 		Name:     req.Name,
 		Location: req.Location,
 		Active:   true,

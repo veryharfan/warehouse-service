@@ -11,10 +11,11 @@ import (
 )
 
 type Config struct {
-	Port               string    `mapstructure:"PORT" validate:"required"`
-	InternalAuthHeader string    `mapstructure:"INTERNAL_AUTH_HEADER" validate:"required"`
-	Db                 DbConfig  `mapstructure:",squash"`
-	Jwt                JwtConfig `mapstructure:",squash"`
+	Port               string     `mapstructure:"PORT" validate:"required"`
+	InternalAuthHeader string     `mapstructure:"INTERNAL_AUTH_HEADER" validate:"required"`
+	Db                 DbConfig   `mapstructure:",squash"`
+	Jwt                JwtConfig  `mapstructure:",squash"`
+	Nats               NatsConfig `mapstructure:",squash"`
 }
 
 type DbConfig struct {
@@ -29,6 +30,11 @@ type DbConfig struct {
 type JwtConfig struct {
 	SecretKey string `mapstructure:"JWT_SECRETKEY" validate:"required"`
 	Expire    int64  `mapstructure:"JWT_EXPIRE" validate:"required"`
+}
+
+type NatsConfig struct {
+	Url        string `mapstructure:"NATS_URL" validate:"required"`
+	StreamName string `mapstructure:"NATS_STREAM_NAME" validate:"required"`
 }
 
 func InitConfig(ctx context.Context) (*Config, error) {
@@ -78,6 +84,8 @@ func InitConfig(ctx context.Context) (*Config, error) {
 		"JWT_SECRETKEY",
 		"JWT_EXPIRE",
 		"INTERNAL_AUTH_HEADER",
+		"NATS_URL",
+		"NATS_STREAM_NAME",
 	}
 
 	slog.InfoContext(ctx, "[InitConfig] Environment variables debug:")
@@ -101,7 +109,10 @@ func InitConfig(ctx context.Context) (*Config, error) {
 		"DB_USERNAME", cfg.Db.Username,
 		"DB_DBNAME", cfg.Db.DbName,
 		"DB_SSLMODE", cfg.Db.SSLMode,
-		"JWT_EXPIRE", cfg.Jwt.Expire)
+		"JWT_EXPIRE", cfg.Jwt.Expire,
+		"NATS_URL", cfg.Nats.Url,
+		"NATS_STREAM_NAME", cfg.Nats.StreamName,
+	)
 
 	// Validate configuration
 	validate := validator.New()
