@@ -39,5 +39,10 @@ func (u *warehouseUsecase) GetByShopID(ctx context.Context, shopID int64) ([]dom
 		slog.ErrorContext(ctx, "[warehouseUsecase] GetByShopID", "getWarehouses", err)
 		return nil, err
 	}
+
+	if len(warehouses) == 0 {
+		return nil, domain.ErrNotFound
+	}
+
 	return warehouses, nil
 }

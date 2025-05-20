@@ -14,8 +14,7 @@ func SetupRouter(app *fiber.App, warehousHandler *WarehouseHandler, stockHandler
 	api.Post("/warehouses", warehousHandler.Create)
 	api.Get("/shops/:shop_id/warehouses", warehousHandler.GetByShopID)
 
-	api.Get("/products/:product_id/stocks", stockHandler.GetByProductID)
-
 	internal := app.Group("/internal/warehouse-service").Use(middleware.AuthInternal(cfg))
 	internal.Post("/stocks", stockHandler.Create)
+	internal.Get("/products/:product_id/stocks", stockHandler.GetByProductID)
 }

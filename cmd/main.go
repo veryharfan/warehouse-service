@@ -59,7 +59,7 @@ func main() {
 		slog.Error("Error creating JetStream context", "error", err)
 		return
 	}
-	_, err = js.CreateStream(ctx, jetstream.StreamConfig{
+	_, err = js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:     strings.ToUpper(cfg.Nats.StreamName),
 		Subjects: []string{fmt.Sprintf("%s.*", strings.ToLower(cfg.Nats.StreamName))},
 		Storage:  jetstream.FileStorage,

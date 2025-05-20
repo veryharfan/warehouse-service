@@ -38,15 +38,15 @@ func (u *stockUsecase) InitStock(ctx context.Context, req domain.StockCreateRequ
 		return nil, err
 	}
 
-	// Publish the stock creation event to the broker
-	err = u.stockPublishBroker.StockInit(ctx, domain.StockMessage{
+	// Publish the stock available event to the broker
+	err = u.stockPublishBroker.PublishStockAvailable(ctx, domain.StockMessage{
 		ProductID: req.ProductID,
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "[stockUsecase] InitStock", "publishStockInit", err)
 	}
 
-	slog.InfoContext(ctx, "[stockUsecase] InitStock", "stocks", stocks)
+	slog.InfoContext(ctx, "[stockUsecase] InitStock", "stocks", req)
 	return stocks, nil
 }
 

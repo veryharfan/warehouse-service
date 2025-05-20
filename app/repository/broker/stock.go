@@ -19,18 +19,18 @@ func NewStockBrokerPublisher(stream jetstream.JetStream) domain.BrokerPublisher 
 	}
 }
 
-func (s *stockBroker) StockInit(ctx context.Context, data domain.StockMessage) error {
+func (s *stockBroker) PublishStockAvailable(ctx context.Context, data domain.StockMessage) error {
 
 	msg, err := json.Marshal(data)
 	if err != nil {
-		slog.ErrorContext(ctx, "[stockBroker] StockInit", "json.Marshal", err)
+		slog.ErrorContext(ctx, "[stockBroker] PublishStockAvailable", "json.Marshal", err)
 	}
 
-	if _, err = s.js.Publish(ctx, "stock.init", msg); err != nil {
-		slog.ErrorContext(ctx, "[stockBroker] StockInit", "Publish", err)
+	if _, err = s.js.Publish(ctx, "stock.available", msg); err != nil {
+		slog.ErrorContext(ctx, "[stockBroker] PublishStockAvailable", "Publish", err)
 		return err
 	}
 
-	slog.InfoContext(ctx, "[stockBroker] StockInit", "message", msg)
+	slog.InfoContext(ctx, "[stockBroker] PublishStockAvailable", "message", msg)
 	return nil
 }
