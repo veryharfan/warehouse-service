@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -20,9 +21,8 @@ type StockCreateRequest struct {
 	ProductID int64 `json:"product_id" validate:"required"`
 }
 
-type ProductQuantityOnWarehouse struct {
-	WarehouseID int64 `json:"warehouse_id"`
-	Quantity    int64 `json:"quantity"`
+type UpdateQuantityRequest struct {
+	Quantity int64 `json:"quantity"`
 }
 
 type StockResponse struct {
@@ -36,9 +36,15 @@ type StockResponse struct {
 type StockRepository interface {
 	Create(ctx context.Context, stock []Stock) error
 	GetByProductID(ctx context.Context, productID int64) ([]Stock, error)
+	GetByID(ctx context.Context, id int64) (Stock, error)
+	UpdateQuantity(ctx context.Context, id, quantity int64, tx *sql.Tx) error
+	GetAvailableStockByProductID(ctx context.Context, productID int64) (int64, error)
+
+	BeginTransaction(ctx context.Context) (*sql.Tx, error)
 }
 
 type StockService interface {
 	InitStock(ctx context.Context, req StockCreateRequest) ([]Stock, error)
 	GetByProductID(ctx context.Context, productID int64) ([]StockResponse, error)
+	UpdateQuantity(ctx context.Context, id, quantity int64) error
 }

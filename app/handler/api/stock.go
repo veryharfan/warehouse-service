@@ -64,5 +64,34 @@ func (h *StockHandler) GetByProductID(c *fiber.Ctx) error {
 		return c.Status(status).JSON(resp)
 	}
 
-	return c.JSON(response.Success(stocks))
+	return c.Status(fiber.StatusOK).JSON(response.Success(stocks))
+}
+
+func (h *StockHandler) UpdateQuantity(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	if idStr == "" {
+		slog.ErrorContext(c.Context(), "[stockHandler] UpdateQuantity", "id", "missing")
+		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrBadRequest))
+	}
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		slog.ErrorContext(c.Context(), "[stockHandler] UpdateQuantity", "parseInt:"+idStr, err)
+		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrBadRequest))
+	}
+
+	var req domain.UpdateQuantityRequest
+	if err := c.BodyParser(&req); err != nil {
+		slog.ErrorContext(c.Context(), "[stockHandler] UpdateQuantity", "bodyParser", err)
+		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrBadRequest))
+	}
+
+	err = h.stockUsecase.UpdateQuantity(c.Context(), id, req.Quantity)
+	if err != nil {
+		slog.ErrorContext(c.Context(), "[stockHandler] UpdateQuantity", "usecase", err)
+		status, resp := response.FromError(err)
+		return c.Status(status).JSON(resp)
+	}
+
+	return c.Status(fiber.StatusNoContent).JSON(response.Success(nil))
 }

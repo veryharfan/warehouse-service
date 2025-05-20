@@ -2,9 +2,11 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"warehouse-service/app/domain"
 	"warehouse-service/config"
+	"warehouse-service/pkg"
 )
 
 type stockUsecase struct {
@@ -75,4 +77,56 @@ func (u *stockUsecase) GetByProductID(ctx context.Context, productID int64) ([]d
 	}
 
 	return stockResponses, nil
+}
+
+func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity int64) error {
+	stock, err := u.stockRepo.GetByID(ctx, id)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "getStock", err)
+		return err
+	}
+
+	availableStock, err := u.stockRepo.GetAvailableStockByProductID(ctx, stock.ProductID)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "getAvailableStock", err)
+		return err
+	}
+
+	tx, err := u.stockRepo.BeginTransaction(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "beginTransaction", err)
+		return err
+	}
+
+	err = pkg.WithTransaction(tx, func() error {
+		err := u.stockRepo.UpdateQuantity(ctx, id, quantity, tx)
+		if err != nil {
+			slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "updateStock", err)
+			return err
+		}
+
+		change := quantity - stock.Quantity
+		updatedStock := availableStock + change
+		if updatedStock < 0 {
+			slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "insufficientStock", nil)
+			return fmt.Errorf("%w: insufficient stock", domain.ErrInvalidRequest)
+		}
+
+		err = u.stockPublishBroker.PublishStockAvailable(ctx, domain.StockMessage{
+			ProductID: stock.ProductID,
+			Available: updatedStock,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "publishStockAvailable", err)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "transactionError", err)
+		return err
+	}
+
+	slog.InfoContext(ctx, "[stockUsecase] UpdateQuantity", "quantityUpdated", quantity)
+	return nil
 }
