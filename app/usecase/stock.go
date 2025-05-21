@@ -2,11 +2,11 @@ package usecase
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"warehouse-service/app/domain"
 	"warehouse-service/config"
-	"warehouse-service/pkg"
 )
 
 type stockUsecase struct {
@@ -86,6 +86,11 @@ func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity int64) e
 		return err
 	}
 
+	if stock.Quantity == quantity {
+		slog.InfoContext(ctx, "[stockUsecase] UpdateQuantity", "noChange", nil)
+		return nil
+	}
+
 	availableStock, err := u.stockRepo.GetAvailableStockByProductID(ctx, stock.ProductID)
 	if err != nil {
 		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "getAvailableStock", err)
@@ -98,8 +103,8 @@ func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity int64) e
 		return err
 	}
 
-	err = pkg.WithTransaction(tx, func() error {
-		err := u.stockRepo.UpdateQuantity(ctx, id, quantity, tx)
+	err = u.stockRepo.WithTransaction(ctx, tx, func(ctx context.Context, tx *sql.Tx) error {
+		err := u.stockRepo.UpdateQuantity(ctx, id, quantity, stock.Version, tx)
 		if err != nil {
 			slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "updateStock", err)
 			return err

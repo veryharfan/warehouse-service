@@ -93,5 +93,5 @@ func (h *StockHandler) UpdateQuantity(c *fiber.Ctx) error {
 		return c.Status(status).JSON(resp)
 	}
 
-	return c.Status(fiber.StatusNoContent).JSON(response.Success(nil))
+	return c.Status(fiber.StatusOK).JSON(response.Success(nil))
 }

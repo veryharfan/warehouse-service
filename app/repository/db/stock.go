@@ -50,7 +50,7 @@ func (r *stockRepository) Create(ctx context.Context, stocks []domain.Stock) err
 }
 
 func (r *stockRepository) GetByProductID(ctx context.Context, productID int64) ([]domain.Stock, error) {
-	query := `SELECT s.id, s.product_id, s.warehouse_id, s.quantity, s.reserved, s.created_at, s.updated_at 
+	query := `SELECT s.id, s.product_id, s.warehouse_id, s.quantity, s.reserved, s.version, s.created_at, s.updated_at 
 	FROM stocks s
 	WHERE s.product_id = $1`
 
@@ -65,7 +65,7 @@ func (r *stockRepository) GetByProductID(ctx context.Context, productID int64) (
 	for rows.Next() {
 		var stock domain.Stock
 		if err := rows.Scan(&stock.ID, &stock.ProductID, &stock.WarehouseID, &stock.Quantity,
-			&stock.Reserved, &stock.CreatedAt, &stock.UpdatedAt); err != nil {
+			&stock.Reserved, &stock.Version, &stock.CreatedAt, &stock.UpdatedAt); err != nil {
 			slog.ErrorContext(ctx, "[stockRepository] GetByProductID", "scan", err)
 			return nil, err
 		}
@@ -73,7 +73,7 @@ func (r *stockRepository) GetByProductID(ctx context.Context, productID int64) (
 	}
 
 	if err := rows.Err(); err != nil {
-		slog.ErrorContext(ctx, "[stockRepository] GetByProductIDAndShopID", "rowError", err)
+		slog.ErrorContext(ctx, "[stockRepository] GetByProductID", "rowError", err)
 		return nil, err
 	}
 
@@ -81,12 +81,12 @@ func (r *stockRepository) GetByProductID(ctx context.Context, productID int64) (
 }
 
 func (r *stockRepository) GetByID(ctx context.Context, id int64) (domain.Stock, error) {
-	query := `SELECT id, product_id, warehouse_id, quantity, reserved, created_at, updated_at 
+	query := `SELECT id, product_id, warehouse_id, quantity, reserved, version, created_at, updated_at 
 	FROM stocks WHERE id = $1`
 
 	var stock domain.Stock
 	err := r.conn.QueryRowContext(ctx, query, id).Scan(&stock.ID, &stock.ProductID,
-		&stock.WarehouseID, &stock.Quantity, &stock.Reserved,
+		&stock.WarehouseID, &stock.Quantity, &stock.Reserved, &stock.Version,
 		&stock.CreatedAt, &stock.UpdatedAt)
 	if err != nil {
 		slog.ErrorContext(ctx, "[stockRepository] GetByID", "queryRowContext", err)
@@ -99,12 +99,23 @@ func (r *stockRepository) GetByID(ctx context.Context, id int64) (domain.Stock, 
 	return stock, nil
 }
 
-func (r *stockRepository) UpdateQuantity(ctx context.Context, id, quantity int64, tx *sql.Tx) error {
-	query := `UPDATE stocks SET quantity = $1 WHERE id = $2`
-	_, err := tx.ExecContext(ctx, query, quantity, id)
+func (r *stockRepository) UpdateQuantity(ctx context.Context, id, quantity, version int64, tx *sql.Tx) error {
+	query := `UPDATE stocks SET quantity = $1, version = version + 1 WHERE id = $2 AND version = $3`
+	res, err := tx.ExecContext(ctx, query, quantity, id, version)
 	if err != nil {
 		slog.ErrorContext(ctx, "[stockRepository] UpdateQuantity", "execContext", err)
 		return err
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockRepository] UpdateQuantity", "rowsAffected", err)
+		return err
+	}
+
+	if rowsAffected == 0 {
+		slog.ErrorContext(ctx, "[stockRepository] UpdateQuantity", "noRowsAffected", "No rows were updated")
+		return fmt.Errorf("%w: no rows were updated, possible version mismatch", domain.ErrVersionMismatch)
 	}
 
 	return nil
@@ -133,4 +144,15 @@ func (r *stockRepository) BeginTransaction(ctx context.Context) (*sql.Tx, error)
 		return nil, err
 	}
 	return tx, nil
+}
+
+func (r *stockRepository) WithTransaction(ctx context.Context, tx *sql.Tx, fn func(context.Context, *sql.Tx) error) error {
+	if err := fn(ctx, tx); err != nil {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			slog.ErrorContext(ctx, "[stockRepository] WithTransaction", "rollback", rollbackErr)
+			return rollbackErr
+		}
+		return err
+	}
+	return tx.Commit()
 }

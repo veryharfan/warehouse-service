@@ -12,6 +12,7 @@ type Stock struct {
 	WarehouseID int64     `json:"warehouse_id"`
 	Quantity    int64     `json:"quantity"`
 	Reserved    int64     `json:"reserved"`
+	Version     int64     `json:"version"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -37,10 +38,11 @@ type StockRepository interface {
 	Create(ctx context.Context, stock []Stock) error
 	GetByProductID(ctx context.Context, productID int64) ([]Stock, error)
 	GetByID(ctx context.Context, id int64) (Stock, error)
-	UpdateQuantity(ctx context.Context, id, quantity int64, tx *sql.Tx) error
+	UpdateQuantity(ctx context.Context, id, quantity, version int64, tx *sql.Tx) error
 	GetAvailableStockByProductID(ctx context.Context, productID int64) (int64, error)
 
 	BeginTransaction(ctx context.Context) (*sql.Tx, error)
+	WithTransaction(ctx context.Context, tx *sql.Tx, fn func(context.Context, *sql.Tx) error) error
 }
 
 type StockService interface {
