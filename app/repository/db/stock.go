@@ -137,16 +137,13 @@ func (r *stockRepository) GetAvailableStockByProductID(ctx context.Context, prod
 	return availableStock, nil
 }
 
-func (r *stockRepository) BeginTransaction(ctx context.Context) (*sql.Tx, error) {
+func (r *stockRepository) WithTransaction(ctx context.Context, fn func(context.Context, *sql.Tx) error) error {
 	tx, err := r.conn.BeginTx(ctx, nil)
 	if err != nil {
-		slog.ErrorContext(ctx, "[stockRepository] BeginTransaction", "beginTx", err)
-		return nil, err
+		slog.ErrorContext(ctx, "[stockRepository] WithTransaction", "beginTx", err)
+		return err
 	}
-	return tx, nil
-}
 
-func (r *stockRepository) WithTransaction(ctx context.Context, tx *sql.Tx, fn func(context.Context, *sql.Tx) error) error {
 	if err := fn(ctx, tx); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
 			slog.ErrorContext(ctx, "[stockRepository] WithTransaction", "rollback", rollbackErr)
@@ -155,4 +152,111 @@ func (r *stockRepository) WithTransaction(ctx context.Context, tx *sql.Tx, fn fu
 		return err
 	}
 	return tx.Commit()
+}
+
+func (r *stockRepository) GetByProductIDAndWarehouseID(ctx context.Context, productID, warehouseID int64) (domain.Stock, error) {
+	query := `SELECT id, product_id, warehouse_id, quantity, reserved, version, created_at, updated_at 
+	FROM stocks WHERE product_id = $1 AND warehouse_id = $2`
+
+	var stock domain.Stock
+	err := r.conn.QueryRowContext(ctx, query, productID, warehouseID).Scan(&stock.ID, &stock.ProductID,
+		&stock.WarehouseID, &stock.Quantity, &stock.Reserved, &stock.Version,
+		&stock.CreatedAt, &stock.UpdatedAt)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockRepository] GetByProductIDAndWarehouseID", "queryRowContext", err)
+		if err == sql.ErrNoRows {
+			return stock, domain.ErrNotFound
+		}
+		return stock, err
+	}
+
+	return stock, nil
+}
+
+func (r *stockRepository) GetListStock(ctx context.Context, shopID int64, param domain.GetListStockRequest) ([]domain.Stock, error) {
+	query := `SELECT s.id, s.product_id, s.warehouse_id, s.quantity, s.reserved, s.version, s.created_at, s.updated_at 
+	FROM stocks s
+	JOIN warehouses w ON s.warehouse_id = w.id 
+	WHERE w.shop_id = $1 AND w.active = true`
+
+	args := []any{shopID}
+	placeholder := 2
+
+	if param.ProductID != 0 {
+		query += fmt.Sprintf(" AND s.product_id = $%d", placeholder)
+		args = append(args, param.ProductID)
+		placeholder++
+	}
+	if param.WarehouseID != 0 {
+		query += fmt.Sprintf(" AND s.warehouse_id = $%d", placeholder)
+		args = append(args, param.WarehouseID)
+		placeholder++
+	}
+
+	if param.SortBy != "" {
+		query += fmt.Sprintf(" ORDER BY %s", param.SortBy)
+		if param.SortOrder != "" {
+			query += fmt.Sprintf(" %s", param.SortOrder)
+		}
+	}
+
+	if param.Page > 0 && param.Limit > 0 {
+		offset := (param.Page - 1) * param.Limit
+		query += fmt.Sprintf(" LIMIT %d OFFSET %d", param.Limit, offset)
+	}
+
+	rows, err := r.conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockRepository] GetListStock", "queryContext", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stocks []domain.Stock
+	for rows.Next() {
+		var stock domain.Stock
+		if err := rows.Scan(&stock.ID, &stock.ProductID, &stock.WarehouseID,
+			&stock.Quantity, &stock.Reserved, &stock.Version,
+			&stock.CreatedAt, &stock.UpdatedAt); err != nil {
+			slog.ErrorContext(ctx, "[stockRepository] GetListStock", "scan", err)
+			return nil, err
+		}
+		stocks = append(stocks, stock)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "[stockRepository] GetListStock", "rowError", err)
+		return nil, err
+	}
+
+	return stocks, nil
+}
+
+func (r *stockRepository) GetListStockCount(ctx context.Context, shopID int64, param domain.GetListStockRequest) (int64, error) {
+	query := `SELECT COUNT(*) 
+	FROM stocks s
+	JOIN warehouses w ON s.warehouse_id = w.id 
+	WHERE w.shop_id = $1 AND w.active = true`
+
+	args := []any{shopID}
+	placeholder := 2
+
+	if param.ProductID != 0 {
+		query += fmt.Sprintf(" AND s.product_id = $%d", placeholder)
+		args = append(args, param.ProductID)
+		placeholder++
+	}
+	if param.WarehouseID != 0 {
+		query += fmt.Sprintf(" AND s.warehouse_id = $%d", placeholder)
+		args = append(args, param.WarehouseID)
+	}
+
+	var count int64
+	err := r.conn.QueryRowContext(ctx, query, args...).Scan(&count)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockRepository] GetListStockCount", "queryRowContext", err)
+		return 0, err
+	}
+
+	return count, nil
 }

@@ -6,6 +6,8 @@ import (
 	"warehouse-service/app/domain"
 	"warehouse-service/app/handler/api/response"
 
+	"warehouse-service/pkg/ctxutil"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 )
@@ -86,7 +88,13 @@ func (h *StockHandler) UpdateQuantity(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrBadRequest))
 	}
 
-	err = h.stockUsecase.UpdateQuantity(c.Context(), id, req.Quantity)
+	shopID, err := ctxutil.GetShopIDCtx(c.Context())
+	if err != nil {
+		slog.ErrorContext(c.Context(), "[stockHandler] UpdateQuantity", "getShopIDCtx", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(response.Error(domain.ErrInternal))
+	}
+
+	err = h.stockUsecase.UpdateQuantity(c.Context(), id, req.Quantity, shopID)
 	if err != nil {
 		slog.ErrorContext(c.Context(), "[stockHandler] UpdateQuantity", "usecase", err)
 		status, resp := response.FromError(err)
@@ -94,4 +102,42 @@ func (h *StockHandler) UpdateQuantity(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(response.Success(nil))
+}
+
+func (h *StockHandler) GetListStock(c *fiber.Ctx) error {
+	shopID, err := ctxutil.GetShopIDCtx(c.Context())
+	if err != nil {
+		slog.ErrorContext(c.Context(), "[stockHandler] GetListStock", "getShopIDCtx", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(response.Error(domain.ErrInternal))
+	}
+
+	param := domain.GetListStockRequest{}
+	if err := c.QueryParser(&param); err != nil {
+		slog.WarnContext(c.Context(), "[stockHandler] GetListStock", "queryParser", err)
+	}
+
+	if param.Page <= 0 {
+		param.Page = 1
+	}
+	if param.Limit <= 0 {
+		param.Limit = 10
+	}
+	if param.Limit > 20 {
+		param.Limit = 20
+	}
+	if param.SortBy == "" || (param.SortBy != "created_at" && param.SortBy != "product_id" && param.SortBy != "warehouse_id") {
+		param.SortBy = "created_at"
+	}
+	if param.SortOrder == "" || (param.SortOrder != "asc" && param.SortOrder != "desc") {
+		param.SortOrder = "desc"
+	}
+
+	stocks, metadata, err := h.stockUsecase.GetListStock(c.Context(), shopID, param)
+	if err != nil {
+		slog.ErrorContext(c.Context(), "[stockHandler] GetListStock", "usecase", err)
+		status, resp := response.FromError(err)
+		return c.Status(status).JSON(resp)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(response.SuccessWithMetadata(stocks, metadata))
 }

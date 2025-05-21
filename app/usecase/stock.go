@@ -79,11 +79,22 @@ func (u *stockUsecase) GetByProductID(ctx context.Context, productID int64) ([]d
 	return stockResponses, nil
 }
 
-func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity int64) error {
+func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity, shopID int64) error {
 	stock, err := u.stockRepo.GetByID(ctx, id)
 	if err != nil {
 		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "getStock", err)
 		return err
+	}
+
+	warehouse, err := u.warehouseRepo.GetByID(ctx, stock.WarehouseID)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "getWarehouse", err)
+		return err
+	}
+
+	if warehouse.ShopID != shopID {
+		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "invalidShopID", "shopID unauthorized")
+		return domain.ErrUnauthorized
 	}
 
 	if stock.Quantity == quantity {
@@ -97,13 +108,7 @@ func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity int64) e
 		return err
 	}
 
-	tx, err := u.stockRepo.BeginTransaction(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "beginTransaction", err)
-		return err
-	}
-
-	err = u.stockRepo.WithTransaction(ctx, tx, func(ctx context.Context, tx *sql.Tx) error {
+	if err = u.stockRepo.WithTransaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		err := u.stockRepo.UpdateQuantity(ctx, id, quantity, stock.Version, tx)
 		if err != nil {
 			slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "updateStock", err)
@@ -126,12 +131,43 @@ func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity int64) e
 			return err
 		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "transactionError", err)
 		return err
 	}
 
 	slog.InfoContext(ctx, "[stockUsecase] UpdateQuantity", "quantityUpdated", quantity)
 	return nil
+}
+
+func (u *stockUsecase) GetListStock(ctx context.Context, shopID int64, param domain.GetListStockRequest) ([]domain.Stock, domain.Metadata, error) {
+	var metadata domain.Metadata
+
+	stocks, err := u.stockRepo.GetListStock(ctx, shopID, param)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockUsecase] GetListStock", "getListStock", err)
+		return nil, metadata, err
+	}
+
+	count, err := u.stockRepo.GetListStockCount(ctx, shopID, param)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockUsecase] GetListStock", "getListStockCount", err)
+		return nil, metadata, err
+	}
+
+	if len(stocks) == 0 {
+		slog.InfoContext(ctx, "[stockUsecase] GetListStock", "noStocksFound", nil)
+		return nil, metadata, domain.ErrNotFound
+	}
+
+	metadata = domain.Metadata{
+		TotalData: count,
+		TotalPage: (count + param.Limit - 1) / param.Limit,
+		Page:      param.Page,
+		Limit:     param.Limit,
+		SortBy:    param.SortBy,
+		SortOrder: param.SortOrder,
+	}
+
+	return stocks, metadata, nil
 }

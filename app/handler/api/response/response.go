@@ -8,15 +8,24 @@ import (
 )
 
 type Response struct {
-	Success bool   `json:"success"`
-	Data    any    `json:"data,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Success  bool             `json:"success"`
+	Metadata *domain.Metadata `json:"meta,omitempty"`
+	Data     any              `json:"data,omitempty"`
+	Error    string           `json:"error,omitempty"`
 }
 
 func Success(data any) *Response {
 	return &Response{
 		Success: true,
 		Data:    data,
+	}
+}
+
+func SuccessWithMetadata(data any, metadata domain.Metadata) *Response {
+	return &Response{
+		Success:  true,
+		Data:     data,
+		Metadata: &metadata,
 	}
 }
 

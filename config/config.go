@@ -11,11 +11,12 @@ import (
 )
 
 type Config struct {
-	Port               string     `mapstructure:"PORT" validate:"required"`
-	InternalAuthHeader string     `mapstructure:"INTERNAL_AUTH_HEADER" validate:"required"`
-	Db                 DbConfig   `mapstructure:",squash"`
-	Jwt                JwtConfig  `mapstructure:",squash"`
-	Nats               NatsConfig `mapstructure:",squash"`
+	Port                     string     `mapstructure:"PORT" validate:"required"`
+	InternalAuthHeader       string     `mapstructure:"INTERNAL_AUTH_HEADER" validate:"required"`
+	WarehouseAdminAuthHeader string     `mapstructure:"WAREHOUSE_ADMIN_AUTH_HEADER" validate:"required"`
+	Db                       DbConfig   `mapstructure:",squash"`
+	Jwt                      JwtConfig  `mapstructure:",squash"`
+	Nats                     NatsConfig `mapstructure:",squash"`
 }
 
 type DbConfig struct {

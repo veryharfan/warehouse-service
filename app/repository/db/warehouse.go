@@ -35,7 +35,7 @@ func (r *warehouseRepository) Create(ctx context.Context, warehouse *domain.Ware
 }
 
 func (r *warehouseRepository) GetByShopID(ctx context.Context, shopID int64) ([]domain.Warehouse, error) {
-	query := `SELECT id, shop_id, name, active, created_at, updated_at 
+	query := `SELECT id, shop_id, name, location, active, created_at, updated_at 
 	FROM warehouses WHERE shop_id = $1`
 	rows, err := r.conn.QueryContext(ctx, query, shopID)
 	if err != nil {
@@ -47,7 +47,7 @@ func (r *warehouseRepository) GetByShopID(ctx context.Context, shopID int64) ([]
 	var warehouses []domain.Warehouse
 	for rows.Next() {
 		var warehouse domain.Warehouse
-		if err := rows.Scan(&warehouse.ID, &warehouse.ShopID, &warehouse.Name, &warehouse.Active,
+		if err := rows.Scan(&warehouse.ID, &warehouse.ShopID, &warehouse.Name, &warehouse.Location, &warehouse.Active,
 			&warehouse.CreatedAt, &warehouse.UpdatedAt); err != nil {
 			slog.ErrorContext(ctx, "[warehouseRepository] GetByShopID", "scan", err)
 			return nil, err
@@ -61,4 +61,22 @@ func (r *warehouseRepository) GetByShopID(ctx context.Context, shopID int64) ([]
 	}
 
 	return warehouses, nil
+}
+
+func (r *warehouseRepository) GetByID(ctx context.Context, id int64) (domain.Warehouse, error) {
+	query := `SELECT id, shop_id, name, location, active, created_at, updated_at 
+	FROM warehouses WHERE id = $1`
+
+	var warehouse domain.Warehouse
+	err := r.conn.QueryRowContext(ctx, query, id).Scan(&warehouse.ID, &warehouse.ShopID,
+		&warehouse.Name, &warehouse.Location, &warehouse.Active, &warehouse.CreatedAt, &warehouse.UpdatedAt)
+	if err != nil {
+		slog.ErrorContext(ctx, "[warehouseRepository] GetByID", "queryRowContext", err)
+		if err == sql.ErrNoRows {
+			return warehouse, domain.ErrNotFound
+		}
+		return warehouse, err
+	}
+
+	return warehouse, nil
 }

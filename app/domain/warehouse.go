@@ -23,6 +23,7 @@ type WarehouseCreateRequest struct {
 type WarehouseRepository interface {
 	Create(ctx context.Context, warehouse *Warehouse) error
 	GetByShopID(ctx context.Context, shopID int64) ([]Warehouse, error)
+	GetByID(ctx context.Context, id int64) (Warehouse, error)
 }
 
 type WarehouseService interface {

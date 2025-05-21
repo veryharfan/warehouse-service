@@ -7,20 +7,28 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func SetupRouter(app *fiber.App, warehousHandler *WarehouseHandler, stockHandler *StockHandler, cfg *config.Config) {
+func SetupRouter(app *fiber.App, warehousHandler *WarehouseHandler, stockHandler *StockHandler, stockTransferHandler *StockTransferHandler, cfg *config.Config) {
 
-	api := app.Group("/warehouse-service").Use(middleware.Auth(cfg.Jwt.SecretKey))
+	api := app.Group("/warehouse-service", middleware.Auth(cfg.Jwt.SecretKey))
+	internal := app.Group("/internal/warehouse-service", middleware.AuthInternal(cfg))
+	warehouseAdmin := app.Group("/admin/warehouse-service", middleware.AuthWarehouseAdmin(cfg))
 
 	// warehouses
 	api.Post("/warehouses", warehousHandler.Create)
 	api.Get("/shops/:shop_id/warehouses", warehousHandler.GetByShopID)
 
 	// stocks
+	api.Get("/stocks", stockHandler.GetListStock)
 	api.Patch("/stocks/:id", stockHandler.UpdateQuantity)
 
-	// internal
-	internal := app.Group("/internal/warehouse-service").Use(middleware.AuthInternal(cfg))
 	// internal stocks
 	internal.Post("/stocks", stockHandler.Create)
 	internal.Get("/products/:product_id/stocks", stockHandler.GetByProductID)
+
+	// stock transfers
+	api.Post("/stock-transfers", stockTransferHandler.Create)
+	api.Get("/stock-transfers/:id", stockTransferHandler.GetByID)
+	api.Get("/stock-transfers", stockTransferHandler.GetListStockTransfer)
+	warehouseAdmin.Patch("/stock-transfers/:id", stockTransferHandler.UpdateStatus)
+
 }
