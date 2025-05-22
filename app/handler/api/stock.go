@@ -66,6 +66,8 @@ func (h *StockHandler) GetByProductID(c *fiber.Ctx) error {
 		return c.Status(status).JSON(resp)
 	}
 
+	slog.InfoContext(c.Context(), "[stockHandler] GetByProductID", "stocks", stocks)
+
 	return c.Status(fiber.StatusOK).JSON(response.Success(stocks))
 }
 
