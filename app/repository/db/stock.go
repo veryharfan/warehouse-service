@@ -50,7 +50,7 @@ func (r *stockRepository) Create(ctx context.Context, stocks []domain.Stock) err
 }
 
 func (r *stockRepository) GetByProductID(ctx context.Context, productID int64) ([]domain.Stock, error) {
-	query := `SELECT s.id, s.product_id, s.warehouse_id, s.quantity, s.reserved, s.version, s.created_at, s.updated_at 
+	query := `SELECT s.id, s.product_id, s.warehouse_id, s.quantity, s.created_at, s.updated_at 
 	FROM stocks s
 	WHERE s.product_id = $1`
 
@@ -65,7 +65,7 @@ func (r *stockRepository) GetByProductID(ctx context.Context, productID int64) (
 	for rows.Next() {
 		var stock domain.Stock
 		if err := rows.Scan(&stock.ID, &stock.ProductID, &stock.WarehouseID, &stock.Quantity,
-			&stock.Reserved, &stock.Version, &stock.CreatedAt, &stock.UpdatedAt); err != nil {
+			&stock.CreatedAt, &stock.UpdatedAt); err != nil {
 			slog.ErrorContext(ctx, "[stockRepository] GetByProductID", "scan", err)
 			return nil, err
 		}
@@ -81,13 +81,12 @@ func (r *stockRepository) GetByProductID(ctx context.Context, productID int64) (
 }
 
 func (r *stockRepository) GetByID(ctx context.Context, id int64) (domain.Stock, error) {
-	query := `SELECT id, product_id, warehouse_id, quantity, reserved, version, created_at, updated_at 
+	query := `SELECT id, product_id, warehouse_id, quantity, created_at, updated_at 
 	FROM stocks WHERE id = $1`
 
 	var stock domain.Stock
 	err := r.conn.QueryRowContext(ctx, query, id).Scan(&stock.ID, &stock.ProductID,
-		&stock.WarehouseID, &stock.Quantity, &stock.Reserved, &stock.Version,
-		&stock.CreatedAt, &stock.UpdatedAt)
+		&stock.WarehouseID, &stock.Quantity, &stock.CreatedAt, &stock.UpdatedAt)
 	if err != nil {
 		slog.ErrorContext(ctx, "[stockRepository] GetByID", "queryRowContext", err)
 		if err == sql.ErrNoRows {
@@ -99,33 +98,24 @@ func (r *stockRepository) GetByID(ctx context.Context, id int64) (domain.Stock, 
 	return stock, nil
 }
 
-func (r *stockRepository) UpdateQuantity(ctx context.Context, id, quantity, version int64, tx *sql.Tx) error {
-	query := `UPDATE stocks SET quantity = $1, version = version + 1 WHERE id = $2 AND version = $3`
-	res, err := tx.ExecContext(ctx, query, quantity, id, version)
+func (r *stockRepository) UpdateQuantity(ctx context.Context, id, quantity int64, tx *sql.Tx) error {
+	query := `UPDATE stocks SET quantity = $1 WHERE id = $2`
+	_, err := tx.ExecContext(ctx, query, quantity, id)
 	if err != nil {
 		slog.ErrorContext(ctx, "[stockRepository] UpdateQuantity", "execContext", err)
 		return err
-	}
-
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		slog.ErrorContext(ctx, "[stockRepository] UpdateQuantity", "rowsAffected", err)
-		return err
-	}
-
-	if rowsAffected == 0 {
-		slog.ErrorContext(ctx, "[stockRepository] UpdateQuantity", "noRowsAffected", "No rows were updated")
-		return fmt.Errorf("%w: no rows were updated, possible version mismatch", domain.ErrVersionMismatch)
 	}
 
 	return nil
 }
 
 func (r *stockRepository) GetAvailableStockByProductID(ctx context.Context, productID int64) (int64, error) {
-	query := `SELECT COALESCE(SUM(s.quantity - s.reserved), 0) 
+	query := `SELECT COALESCE(SUM(s.quantity), 0) - COALESCE(SUM(rs.quantity), 0) AS available_stock
 	FROM stocks s
-	JOIN warehouses w ON s.warehouse_id = w.id 
-	WHERE s.product_id = $1 AND w.active = true`
+	JOIN warehouses w ON s.warehouse_id = w.id
+	LEFT JOIN reserved_stocks rs ON rs.stock_id = s.id AND rs.status = 'active'
+	WHERE s.product_id = $1
+  	AND w.active = TRUE`
 
 	var availableStock int64
 	err := r.conn.QueryRowContext(ctx, query, productID).Scan(&availableStock)
@@ -147,21 +137,26 @@ func (r *stockRepository) WithTransaction(ctx context.Context, fn func(context.C
 	if err := fn(ctx, tx); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
 			slog.ErrorContext(ctx, "[stockRepository] WithTransaction", "rollback", rollbackErr)
-			return rollbackErr
+			return err
 		}
 		return err
 	}
-	return tx.Commit()
+
+	if err := tx.Commit(); err != nil {
+		slog.ErrorContext(ctx, "[stockTransferRepository] WithTransaction", "commit", err)
+		return err
+	}
+
+	return nil
 }
 
 func (r *stockRepository) GetByProductIDAndWarehouseID(ctx context.Context, productID, warehouseID int64) (domain.Stock, error) {
-	query := `SELECT id, product_id, warehouse_id, quantity, reserved, version, created_at, updated_at 
+	query := `SELECT id, product_id, warehouse_id, quantity, created_at, updated_at 
 	FROM stocks WHERE product_id = $1 AND warehouse_id = $2`
 
 	var stock domain.Stock
 	err := r.conn.QueryRowContext(ctx, query, productID, warehouseID).Scan(&stock.ID, &stock.ProductID,
-		&stock.WarehouseID, &stock.Quantity, &stock.Reserved, &stock.Version,
-		&stock.CreatedAt, &stock.UpdatedAt)
+		&stock.WarehouseID, &stock.Quantity, &stock.CreatedAt, &stock.UpdatedAt)
 	if err != nil {
 		slog.ErrorContext(ctx, "[stockRepository] GetByProductIDAndWarehouseID", "queryRowContext", err)
 		if err == sql.ErrNoRows {
@@ -174,7 +169,7 @@ func (r *stockRepository) GetByProductIDAndWarehouseID(ctx context.Context, prod
 }
 
 func (r *stockRepository) GetListStock(ctx context.Context, shopID int64, param domain.GetListStockRequest) ([]domain.Stock, error) {
-	query := `SELECT s.id, s.product_id, s.warehouse_id, s.quantity, s.reserved, s.version, s.created_at, s.updated_at 
+	query := `SELECT s.id, s.product_id, s.warehouse_id, s.quantity, s.created_at, s.updated_at
 	FROM stocks s
 	JOIN warehouses w ON s.warehouse_id = w.id 
 	WHERE w.shop_id = $1 AND w.active = true`
@@ -216,8 +211,7 @@ func (r *stockRepository) GetListStock(ctx context.Context, shopID int64, param 
 	for rows.Next() {
 		var stock domain.Stock
 		if err := rows.Scan(&stock.ID, &stock.ProductID, &stock.WarehouseID,
-			&stock.Quantity, &stock.Reserved, &stock.Version,
-			&stock.CreatedAt, &stock.UpdatedAt); err != nil {
+			&stock.Quantity, &stock.CreatedAt, &stock.UpdatedAt); err != nil {
 			slog.ErrorContext(ctx, "[stockRepository] GetListStock", "scan", err)
 			return nil, err
 		}
@@ -259,4 +253,88 @@ func (r *stockRepository) GetListStockCount(ctx context.Context, shopID int64, p
 	}
 
 	return count, nil
+}
+
+func (r *stockRepository) GetByWarehouseID(ctx context.Context, warehouseID int64) ([]domain.Stock, error) {
+	query := `SELECT id, product_id, warehouse_id, quantity, created_at, updated_at 
+	FROM stocks WHERE warehouse_id = $1`
+
+	rows, err := r.conn.QueryContext(ctx, query, warehouseID)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockRepository] GetByWarehouseID", "queryContext", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stocks []domain.Stock
+	for rows.Next() {
+		var stock domain.Stock
+		if err := rows.Scan(&stock.ID, &stock.ProductID,
+			&stock.WarehouseID, &stock.Quantity,
+			&stock.CreatedAt, &stock.UpdatedAt); err != nil {
+			slog.ErrorContext(ctx, "[stockRepository] GetByWarehouseID", "scan", err)
+			return nil, err
+		}
+		stocks = append(stocks, stock)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "[stockRepository] GetByWarehouseID", "rowError", err)
+		return nil, err
+	}
+
+	return stocks, nil
+}
+
+func (r *stockRepository) LockForUpdate(ctx context.Context, id int64, tx *sql.Tx) (domain.Stock, error) {
+	query := `SELECT id, product_id, warehouse_id, quantity, created_at, updated_at 
+	FROM stocks WHERE id = $1 FOR UPDATE`
+
+	var stock domain.Stock
+	err := tx.QueryRowContext(ctx, query, id).Scan(&stock.ID, &stock.ProductID,
+		&stock.WarehouseID, &stock.Quantity, &stock.CreatedAt, &stock.UpdatedAt)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockRepository] LockForUpdate", "queryRowContext", err)
+		if err == sql.ErrNoRows {
+			return stock, domain.ErrNotFound
+		}
+		return stock, err
+	}
+
+	return stock, nil
+}
+
+func (r *stockRepository) GetAvailableStockByProductIDs(ctx context.Context, productIDs []int64) (map[int64]int64, error) {
+	query := `SELECT s.product_id, COALESCE(SUM(s.quantity), 0) - COALESCE(SUM(rs.quantity), 0) AS available_stock
+	FROM stocks s
+	JOIN warehouses w ON s.warehouse_id = w.id
+	LEFT JOIN reserved_stocks rs ON rs.stock_id = s.id AND rs.status = 'active'
+	WHERE s.product_id = ANY($1)
+  	AND w.active = TRUE
+	GROUP BY s.product_id`
+
+	rows, err := r.conn.QueryContext(ctx, query, productIDs)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockRepository] GetAvailableStockByProductIDs", "queryContext", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	availableStocks := make(map[int64]int64)
+	for rows.Next() {
+		var productID int64
+		var availableStock int64
+		if err := rows.Scan(&productID, &availableStock); err != nil {
+			slog.ErrorContext(ctx, "[stockRepository] GetAvailableStockByProductIDs", "scan", err)
+			return nil, err
+		}
+		availableStocks[productID] = availableStock
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "[stockRepository] GetAvailableStockByProductIDs", "rowError", err)
+		return nil, err
+	}
+
+	return availableStocks, nil
 }

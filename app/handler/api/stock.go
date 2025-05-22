@@ -59,7 +59,7 @@ func (h *StockHandler) GetByProductID(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrBadRequest))
 	}
 
-	stocks, err := h.stockUsecase.GetByProductID(c.Context(), productID)
+	stocks, err := h.stockUsecase.GetAvailableStockByProductID(c.Context(), productID)
 	if err != nil {
 		slog.ErrorContext(c.Context(), "[stockHandler] GetByProductID", "usecase", err)
 		status, resp := response.FromError(err)
@@ -94,7 +94,7 @@ func (h *StockHandler) UpdateQuantity(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(response.Error(domain.ErrInternal))
 	}
 
-	err = h.stockUsecase.UpdateQuantity(c.Context(), id, req.Quantity, shopID)
+	err = h.stockUsecase.UpdateQuantity(c.Context(), id, shopID, req)
 	if err != nil {
 		slog.ErrorContext(c.Context(), "[stockHandler] UpdateQuantity", "usecase", err)
 		status, resp := response.FromError(err)

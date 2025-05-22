@@ -16,6 +16,7 @@ func SetupRouter(app *fiber.App, warehousHandler *WarehouseHandler, stockHandler
 	// warehouses
 	api.Post("/warehouses", warehousHandler.Create)
 	api.Get("/shops/:shop_id/warehouses", warehousHandler.GetByShopID)
+	api.Patch("/warehouses/:id/status", warehousHandler.UpdateStatus)
 
 	// stocks
 	api.Get("/stocks", stockHandler.GetListStock)

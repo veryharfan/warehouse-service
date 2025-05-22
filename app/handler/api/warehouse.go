@@ -70,3 +70,38 @@ func (h *WarehouseHandler) GetByShopID(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusOK).JSON(response.Success(warehouses))
 }
+
+func (h *WarehouseHandler) UpdateStatus(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	if idStr == "" {
+		slog.ErrorContext(c.Context(), "[warehouseHandler] UpdateStatus", "id", "missing")
+		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrBadRequest))
+	}
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		slog.ErrorContext(c.Context(), "[warehouseHandler] UpdateStatus", "parseInt:"+idStr, err)
+		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrBadRequest))
+	}
+
+	var req domain.WarehouseUpdateStatusRequest
+	if err := c.BodyParser(&req); err != nil {
+		slog.ErrorContext(c.Context(), "[warehouseHandler] UpdateStatus", "bodyParser", err)
+		return c.Status(fiber.StatusBadRequest).JSON(response.Error(domain.ErrBadRequest))
+	}
+
+	shopID, err := ctxutil.GetShopIDCtx(c.Context())
+	if err != nil {
+		slog.ErrorContext(c.Context(), "[warehouseHandler] UpdateStatus", "GetShopIDCtx", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(response.Error(domain.ErrInternal))
+	}
+
+	err = h.warehouseUsecase.UpdateStatus(c.Context(), id, shopID, req)
+	if err != nil {
+		slog.ErrorContext(c.Context(), "[warehouseHandler] UpdateStatus", "usecase", err)
+		status, response := response.FromError(err)
+		return c.Status(status).JSON(response)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(response.Success(nil))
+}

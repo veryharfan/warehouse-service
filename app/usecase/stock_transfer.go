@@ -11,14 +11,16 @@ type stockTransferUsecase struct {
 	stockTransferRepo  domain.StockTransferRepository
 	warehouseRepo      domain.WarehouseRepository
 	stockRepo          domain.StockRepository
+	reservedStockRepo  domain.ReservedStockRepository
 	stockPublishBroker domain.BrokerPublisher
 }
 
 func NewStockTransferUsecase(stockTransferRepo domain.StockTransferRepository,
 	warehouseRepo domain.WarehouseRepository,
 	stockRepo domain.StockRepository,
+	reservedStockRepo domain.ReservedStockRepository,
 	stockPublishBroker domain.BrokerPublisher) domain.StockTransferUsecase {
-	return &stockTransferUsecase{stockTransferRepo, warehouseRepo, stockRepo, stockPublishBroker}
+	return &stockTransferUsecase{stockTransferRepo, warehouseRepo, stockRepo, reservedStockRepo, stockPublishBroker}
 }
 
 func (u *stockTransferUsecase) CreateTransfer(ctx context.Context, shopID int64, req domain.StockTransferCreateRequest) (*domain.StockTransfer, error) {
@@ -45,7 +47,13 @@ func (u *stockTransferUsecase) CreateTransfer(ctx context.Context, shopID int64,
 		return nil, err
 	}
 
-	if (fromWarehouseStock.Quantity - fromWarehouseStock.Reserved) < req.Quantity {
+	reservedStockFromWarehouse, err := u.reservedStockRepo.GetTotalReservedStockByStockIDAndStatus(ctx, fromWarehouseStock.ID, domain.ReservedStockStatusActive)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockTransferUsecase] CreateTransfer", "getReservedStockFromWarehouse", err)
+		return nil, err
+	}
+
+	if (fromWarehouseStock.Quantity - reservedStockFromWarehouse) < req.Quantity {
 		slog.ErrorContext(ctx, "[stockTransferUsecase] CreateTransfer", "insufficientStock", "fromWarehouseStock")
 		return nil, domain.ErrInvalidRequest
 	}
@@ -126,7 +134,12 @@ func (u *stockTransferUsecase) UpdateTransferStatus(ctx context.Context, id int6
 			return domain.ErrInvalidRequest
 		}
 
-		if fromWarehouseStock.Quantity-fromWarehouseStock.Reserved < st.Quantity {
+		reservedStockFromWarehouse, err := u.reservedStockRepo.GetTotalReservedStockByStockIDAndStatus(ctx, fromWarehouseStock.ID, domain.ReservedStockStatusActive)
+		if err != nil {
+			slog.ErrorContext(ctx, "[stockTransferUsecase] UpdateTransferStatus", "getReservedStockFromWarehouse", err)
+			return err
+		}
+		if fromWarehouseStock.Quantity-reservedStockFromWarehouse < st.Quantity {
 			return domain.ErrInvalidRequest
 		}
 
@@ -164,14 +177,15 @@ func (u *stockTransferUsecase) UpdateTransferStatus(ctx context.Context, id int6
 	st.Description = req.Description
 
 	if err = u.stockTransferRepo.WithTransaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		err = u.stockTransferRepo.UpdateStatus(ctx, st, tx)
-		if err != nil {
-			slog.ErrorContext(ctx, "[stockTransferUsecase] UpdateTransferStatus", "updateStatus", err)
-			return err
-		}
-
 		if updateFromWarehouseStock {
-			err = u.stockRepo.UpdateQuantity(ctx, fromWarehouseStock.ID, fromWarehouseStock.Quantity, fromWarehouseStock.Version, tx)
+			// Lock the stock row for update
+			_, err = u.stockRepo.LockForUpdate(ctx, fromWarehouseStock.ID, tx)
+			if err != nil {
+				slog.ErrorContext(ctx, "[stockTransferUsecase] UpdateTransferStatus", "lockFromWarehouseStock", err)
+				return err
+			}
+			// Update the stock quantity
+			err = u.stockRepo.UpdateQuantity(ctx, fromWarehouseStock.ID, fromWarehouseStock.Quantity, tx)
 			if err != nil {
 				slog.ErrorContext(ctx, "[stockTransferUsecase] UpdateTransferStatus", "updateFromWarehouseStock", err)
 				return err
@@ -179,11 +193,24 @@ func (u *stockTransferUsecase) UpdateTransferStatus(ctx context.Context, id int6
 		}
 
 		if updateToWarehouseStock {
-			err = u.stockRepo.UpdateQuantity(ctx, toWarehouseStock.ID, toWarehouseStock.Quantity, toWarehouseStock.Version, tx)
+			// Lock the stock row for update
+			_, err = u.stockRepo.LockForUpdate(ctx, toWarehouseStock.ID, tx)
+			if err != nil {
+				slog.ErrorContext(ctx, "[stockTransferUsecase] UpdateTransferStatus", "lockToWarehouseStock", err)
+				return err
+			}
+			// Update the stock quantity in the to warehouse
+			err = u.stockRepo.UpdateQuantity(ctx, toWarehouseStock.ID, toWarehouseStock.Quantity, tx)
 			if err != nil {
 				slog.ErrorContext(ctx, "[stockTransferUsecase] UpdateTransferStatus", "updateToWarehouseStock", err)
 				return err
 			}
+		}
+
+		err = u.stockTransferRepo.UpdateStatus(ctx, st, tx)
+		if err != nil {
+			slog.ErrorContext(ctx, "[stockTransferUsecase] UpdateTransferStatus", "updateStatus", err)
+			return err
 		}
 
 		if err = u.stockPublishBroker.PublishStockAvailable(ctx, domain.StockMessage{

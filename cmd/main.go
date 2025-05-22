@@ -74,10 +74,11 @@ func main() {
 	stockRepo := db.NewStockRepository(dbConn)
 	stockBroker := broker.NewStockBrokerPublisher(js)
 	stockTransferRepo := db.NewStockTransferRepository(dbConn)
+	reservedStockRepo := db.NewReservedStockRepository(dbConn)
 
-	warehouseUsecase := usecase.NewWarehouseUsecase(warehouseRepo, cfg)
-	stockUsecase := usecase.NewStockUsecase(stockRepo, warehouseRepo, stockBroker, cfg)
-	stockTransferUsecase := usecase.NewStockTransferUsecase(stockTransferRepo, warehouseRepo, stockRepo, stockBroker)
+	warehouseUsecase := usecase.NewWarehouseUsecase(warehouseRepo, stockRepo, reservedStockRepo, stockBroker, cfg)
+	stockUsecase := usecase.NewStockUsecase(stockRepo, warehouseRepo, reservedStockRepo, stockBroker, cfg)
+	stockTransferUsecase := usecase.NewStockTransferUsecase(stockTransferRepo, warehouseRepo, stockRepo, reservedStockRepo, stockBroker)
 
 	warehouseHandler := handler.NewWarehouseHandler(warehouseUsecase, reqValidator)
 	stockHandler := handler.NewStockHandler(stockUsecase, reqValidator)

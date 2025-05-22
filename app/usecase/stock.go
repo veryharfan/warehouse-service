@@ -12,12 +12,13 @@ import (
 type stockUsecase struct {
 	stockRepo          domain.StockRepository
 	warehouseRepo      domain.WarehouseRepository
+	reservedStockRepo  domain.ReservedStockRepository
 	stockPublishBroker domain.BrokerPublisher
 	cfg                *config.Config
 }
 
-func NewStockUsecase(stockRepo domain.StockRepository, warehouseRepo domain.WarehouseRepository, stockPublishBroker domain.BrokerPublisher, cfg *config.Config) domain.StockService {
-	return &stockUsecase{stockRepo, warehouseRepo, stockPublishBroker, cfg}
+func NewStockUsecase(stockRepo domain.StockRepository, warehouseRepo domain.WarehouseRepository, reservedStockRepo domain.ReservedStockRepository, stockPublishBroker domain.BrokerPublisher, cfg *config.Config) domain.StockService {
+	return &stockUsecase{stockRepo, warehouseRepo, reservedStockRepo, stockPublishBroker, cfg}
 }
 
 func (u *stockUsecase) InitStock(ctx context.Context, req domain.StockCreateRequest) ([]domain.Stock, error) {
@@ -52,34 +53,20 @@ func (u *stockUsecase) InitStock(ctx context.Context, req domain.StockCreateRequ
 	return stocks, nil
 }
 
-func (u *stockUsecase) GetByProductID(ctx context.Context, productID int64) ([]domain.StockResponse, error) {
-	stocks, err := u.stockRepo.GetByProductID(ctx, productID)
+func (u *stockUsecase) GetAvailableStockByProductID(ctx context.Context, productID int64) (domain.AvailableStock, error) {
+	availableStock, err := u.stockRepo.GetAvailableStockByProductID(ctx, productID)
 	if err != nil {
-		slog.ErrorContext(ctx, "[stockUsecase] GetByProductID", "getStocks", err)
-		return nil, err
+		slog.ErrorContext(ctx, "[stockUsecase] GetAvailableStockByProductID", "getAvailableStock", err)
+		return domain.AvailableStock{}, err
 	}
 
-	if len(stocks) == 0 {
-		slog.InfoContext(ctx, "[stockUsecase] GetByProductID", "noStocksFound", nil)
-		return nil, domain.ErrNotFound
-	}
-
-	var stockResponses []domain.StockResponse
-	for _, stock := range stocks {
-		stockResponse := domain.StockResponse{
-			ProductID:   stock.ProductID,
-			WarehouseID: stock.WarehouseID,
-			Quantity:    stock.Quantity,
-			Reserved:    stock.Reserved,
-			Available:   stock.Quantity - stock.Reserved,
-		}
-		stockResponses = append(stockResponses, stockResponse)
-	}
-
-	return stockResponses, nil
+	return domain.AvailableStock{
+		ProductID:      productID,
+		AvailableStock: availableStock,
+	}, nil
 }
 
-func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity, shopID int64) error {
+func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, shopID int64, req domain.UpdateQuantityRequest) error {
 	stock, err := u.stockRepo.GetByID(ctx, id)
 	if err != nil {
 		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "getStock", err)
@@ -97,7 +84,7 @@ func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity, shopID 
 		return domain.ErrUnauthorized
 	}
 
-	if stock.Quantity == quantity {
+	if stock.Quantity == req.Quantity {
 		slog.InfoContext(ctx, "[stockUsecase] UpdateQuantity", "noChange", nil)
 		return nil
 	}
@@ -108,14 +95,31 @@ func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity, shopID 
 		return err
 	}
 
+	reservedStock, err := u.reservedStockRepo.GetTotalReservedStockByStockIDAndStatus(ctx, stock.ID, domain.ReservedStockStatusActive)
+	if err != nil {
+		slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "getReservedStock", err)
+		return err
+	}
+
+	if req.Quantity < reservedStock {
+		return fmt.Errorf("%w: quantity insufficient for reserved stock at warehouse", domain.ErrInvalidRequest)
+	}
+
 	if err = u.stockRepo.WithTransaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		err := u.stockRepo.UpdateQuantity(ctx, id, quantity, stock.Version, tx)
+		// Lock the stock row for update
+		stock, err := u.stockRepo.LockForUpdate(ctx, id, tx)
+		if err != nil {
+			slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "lockForUpdate", err)
+			return err
+		}
+
+		err = u.stockRepo.UpdateQuantity(ctx, id, req.Quantity, tx)
 		if err != nil {
 			slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "updateStock", err)
 			return err
 		}
 
-		change := quantity - stock.Quantity
+		change := req.Quantity - stock.Quantity
 		updatedStock := availableStock + change
 		if updatedStock < 0 {
 			slog.ErrorContext(ctx, "[stockUsecase] UpdateQuantity", "insufficientStock", nil)
@@ -136,7 +140,7 @@ func (u *stockUsecase) UpdateQuantity(ctx context.Context, id, quantity, shopID 
 		return err
 	}
 
-	slog.InfoContext(ctx, "[stockUsecase] UpdateQuantity", "quantityUpdated", quantity)
+	slog.InfoContext(ctx, "[stockUsecase] UpdateQuantity", "quantityUpdated", req.Quantity)
 	return nil
 }
 
