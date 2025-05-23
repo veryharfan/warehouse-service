@@ -15,15 +15,15 @@ func NewReservedStockRepository(db *sql.DB) domain.ReservedStockRepository {
 	return &reservedStockRepository{db}
 }
 
-func (r *reservedStockRepository) CreateReservedStock(ctx context.Context, stockID, quantity, orderID int64) (int64, error) {
-	query := `INSERT INTO reserved_stocks (stock_id, quantity, order_id) VALUES ($1, $2, $3) RETURNING id`
-	var id int64
-	err := r.conn.QueryRowContext(ctx, query, stockID, quantity, orderID).Scan(&id)
+func (r *reservedStockRepository) CreateReservedStock(ctx context.Context, rs *domain.ReservedStock, tx *sql.Tx) error {
+	query := `INSERT INTO reserved_stocks (stock_id, quantity, order_id, status) VALUES ($1, $2, $3, $4) 
+		RETURNING id, created_at, updated_at`
+	err := tx.QueryRowContext(ctx, query, rs.StockID, rs.Quantity, rs.OrderID, rs.Status).Scan(&rs.ID, &rs.CreatedAt, &rs.UpdatedAt)
 	if err != nil {
 		slog.ErrorContext(ctx, "[reservedStockRepository] CreateReservedStock", "queryRowContext", err)
-		return 0, err
+		return err
 	}
-	return id, nil
+	return nil
 }
 
 func (r *reservedStockRepository) GetReservedStocksByStockIDAndStatus(ctx context.Context, stockID int64, status domain.ReservedStockStatus) ([]domain.ReservedStock, error) {

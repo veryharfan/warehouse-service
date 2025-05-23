@@ -87,6 +87,7 @@ func InitConfig(ctx context.Context) (*Config, error) {
 		"INTERNAL_AUTH_HEADER",
 		"NATS_URL",
 		"NATS_STREAM_NAME",
+		"WAREHOUSE_ADMIN_AUTH_HEADER",
 	}
 
 	slog.InfoContext(ctx, "[InitConfig] Environment variables debug:")

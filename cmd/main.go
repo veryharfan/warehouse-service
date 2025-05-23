@@ -79,10 +79,12 @@ func main() {
 	warehouseUsecase := usecase.NewWarehouseUsecase(warehouseRepo, stockRepo, reservedStockRepo, stockBroker, cfg)
 	stockUsecase := usecase.NewStockUsecase(stockRepo, warehouseRepo, reservedStockRepo, stockBroker, cfg)
 	stockTransferUsecase := usecase.NewStockTransferUsecase(stockTransferRepo, warehouseRepo, stockRepo, reservedStockRepo, stockBroker)
+	reservedStockUsecase := usecase.NewReservedStockUsecase(stockRepo, reservedStockRepo, stockBroker, cfg)
 
 	warehouseHandler := handler.NewWarehouseHandler(warehouseUsecase, reqValidator)
 	stockHandler := handler.NewStockHandler(stockUsecase, reqValidator)
 	stockTransferHandler := handler.NewStockTransferHandler(stockTransferUsecase, reqValidator)
+	reservedStockHandler := handler.NewReservedStockHandler(reservedStockUsecase, reqValidator)
 
 	// Initialize HTTP web framework
 	app := fiber.New()
@@ -106,7 +108,7 @@ func main() {
 	}))
 	app.Use(middleware.RequestIDMiddleware())
 
-	handler.SetupRouter(app, warehouseHandler, stockHandler, stockTransferHandler, cfg)
+	handler.SetupRouter(app, warehouseHandler, stockHandler, stockTransferHandler, reservedStockHandler, cfg)
 
 	go func() {
 		if err := app.Listen(":" + cfg.Port); err != nil {

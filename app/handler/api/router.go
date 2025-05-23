@@ -7,7 +7,12 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func SetupRouter(app *fiber.App, warehousHandler *WarehouseHandler, stockHandler *StockHandler, stockTransferHandler *StockTransferHandler, cfg *config.Config) {
+func SetupRouter(app *fiber.App,
+	warehousHandler *WarehouseHandler,
+	stockHandler *StockHandler,
+	stockTransferHandler *StockTransferHandler,
+	reservedStockHandler *ReservedStockHandler,
+	cfg *config.Config) {
 
 	api := app.Group("/warehouse-service", middleware.Auth(cfg.Jwt.SecretKey))
 	internal := app.Group("/internal/warehouse-service", middleware.AuthInternal(cfg))
@@ -31,5 +36,9 @@ func SetupRouter(app *fiber.App, warehousHandler *WarehouseHandler, stockHandler
 	api.Get("/stock-transfers/:id", stockTransferHandler.GetByID)
 	api.Get("/stock-transfers", stockTransferHandler.GetListStockTransfer)
 	warehouseAdmin.Patch("/stock-transfers/:id", stockTransferHandler.UpdateStatus)
+
+	// reserved stocks
+	internal.Post("/reserved-stocks", reservedStockHandler.CreateReservedStock)
+	internal.Patch("/orders/:order_id/reserved-stocks/status", reservedStockHandler.UpdateReservedStockStatus)
 
 }
